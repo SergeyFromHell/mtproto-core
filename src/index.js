@@ -67,9 +67,22 @@ class MTProto {
     this.rpcs = {};
 
     this.storage = new Storage('', { customLocalStorage });
+
+    this.closed = false;
+  }
+
+  close() {
+    this.closed = true;
+
+    for (let rpc of Object.values(this.rpcs)) {
+      rpc.close();
+    }
   }
 
   async call(method, params = {}, options = {}) {
+    if (this.closed)
+      throw new Error('MTProto has been closed.');
+
     const { syncAuth = true } = options;
 
     const dcId = options.dcId || (await this.storage.get('defaultDcId')) || 2;
@@ -127,6 +140,9 @@ class MTProto {
   }
 
   createRPC(dcId) {
+    if (this.closed)
+      throw new Error('MTProto has been closed.');
+
     if (dcId in this.rpcs) {
       return;
     }

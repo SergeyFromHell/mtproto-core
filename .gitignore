@@ -12,7 +12,7 @@
 /build
 /dist
 /package
-/scheme/index.js
+#/scheme/index.js
 /dual-publish-tmp
 
 # misc

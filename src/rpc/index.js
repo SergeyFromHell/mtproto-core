@@ -4,6 +4,9 @@ const { meta } = require('../meta');
 const { Transport } = require('../transport');
 const TLSerializer = require('../tl/serializer');
 const TLDeserializer = require('../tl/deserializer');
+
+const { Storage } = require('../storage');
+
 const {
   bytesIsEqual,
   bytesToHex,
@@ -21,6 +24,10 @@ const { pqPrimeFactorization } = require('../utils/pq');
 const { AES, RSA, SHA1, SHA256 } = require('../utils/crypto');
 const { getRsaKeyByFingerprints } = require('../utils/rsa');
 
+function createTransportCloseError(message) {
+  return new Error('Transport close.');
+}
+
 class RPC {
   constructor({ api_id, api_hash, dc, updates, storage }) {
     this.api_id = api_id;
@@ -35,6 +42,8 @@ class RPC {
 
     this.storage = storage;
 
+    this.closed = false;
+
     this.updateSession();
 
     this.transport = new Transport(this.dc);
@@ -45,7 +54,7 @@ class RPC {
     this.transport.on('message', this.handleTransportMessage.bind(this));
 
     this.sendAcks = debounce(() => {
-      if (!this.pendingAcks.length) {
+      if (!this.pendingAcks.length || this.closed) {
         return;
       }
 
@@ -64,6 +73,15 @@ class RPC {
         isContentRelated: false,
       });
     }, 500);
+  }
+
+  close() {
+    this.closed = true;
+
+    // no writes to storage after close!
+    this.storage = Storage.createDummy();
+
+    this.transport.close();
   }
 
   async handleTransportError(payload) {
@@ -112,6 +130,23 @@ class RPC {
 
   async handleTransportClose(event) {
     this.isReady = false;
+    this.rejectPendingMessages();
+  }
+
+  rejectPendingMessages() {
+    const messagesWaitAuth = this.messagesWaitAuth;
+    this.messagesWaitAuth = [];
+
+    const messagesWaitResponse = this.messagesWaitResponse;
+    this.messagesWaitResponse = new Map();
+
+    for (let message of messagesWaitResponse.values()) {
+      message.reject(createTransportCloseError(message));
+    }
+
+    for (let message of messagesWaitAuth) {
+      message.reject(createTransportCloseError(message));
+    }
   }
 
   async handleTransportMessage(buffer) {

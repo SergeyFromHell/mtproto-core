@@ -1,5 +1,6 @@
 const { Socket } = require('net');
 const { Obfuscated } = require('../obfuscated');
+const debounce = require('lodash.debounce');
 
 class TCP extends Obfuscated {
   constructor(dc) {
@@ -7,11 +8,28 @@ class TCP extends Obfuscated {
 
     this.dc = dc;
 
+    this.closed = false;
+
+    this.connect = debounce(this.connect.bind(this), 1000, {
+      leading: true,
+    });
+
     this.connect();
+  }
+
+  close() {
+    this.closed = true;
+    
+    if (this.socket && !this.socket.destroyed) {
+      this.socket.destroy();
+    }
   }
 
   connect() {
     this.stream = new Uint8Array();
+
+    if (this.closed)
+      return;
 
     this.socket = new Socket();
 
